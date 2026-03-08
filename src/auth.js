@@ -6,11 +6,17 @@ const supabase = createClient(
 )
 
 export function signInWithGoogle() {
-  return supabase.auth.signInWithOAuth({ provider: 'google' })
+  return supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin },
+  })
 }
 
 export function signInWithGitHub() {
-  return supabase.auth.signInWithOAuth({ provider: 'github' })
+  return supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo: window.location.origin },
+  })
 }
 
 export function signOut() {
