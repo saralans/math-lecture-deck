@@ -4,7 +4,7 @@ import SlideshowScreen from './SlideshowScreen.jsx'
 import AuthScreen from './AuthScreen.jsx'
 import { callAPI } from './prompt.js'
 import { decodeDeckFromHash } from './share.js'
-import { getSession, onAuthChange, signOut } from './auth.js'
+import { getSession, onAuthChange, signOut, processOAuthHash } from './auth.js'
 
 export default function App() {
   const [session,   setSession]   = useState(null)
@@ -21,24 +21,21 @@ export default function App() {
   })
 
   useEffect(() => {
-    // If the URL hash contains OAuth tokens, Supabase will fire SIGNED_IN
-    // asynchronously after processing them. Don't call getSession() yet —
-    // it would return null and flash the login screen. Instead, stay in the
-    // loading state (authReady=false) until onAuthStateChange fires.
-    const hasOAuthHash = window.location.hash.includes('access_token=')
-
-    if (!hasOAuthHash) {
-      // Normal load: check stored session immediately
-      getSession().then(s => {
-        setSession(s)
-        setAuthReady(true)
-      })
-    }
-
     const unsub = onAuthChange((s) => {
       setSession(s)
       setAuthReady(true)
     })
+
+    if (window.location.hash.includes('access_token=')) {
+      // OAuth redirect: tokens are in the URL hash. Explicitly set the
+      // session from them — don't wait on Supabase's async event timing.
+      processOAuthHash()
+        .then(s => { if (s) { setSession(s); setAuthReady(true) } })
+        .catch(() => setAuthReady(true))
+    } else {
+      getSession().then(s => { setSession(s); setAuthReady(true) })
+    }
+
     return unsub
   }, [])
 
