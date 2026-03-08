@@ -4,7 +4,7 @@ import SlideshowScreen from './SlideshowScreen.jsx'
 import AuthScreen from './AuthScreen.jsx'
 import { callAPI } from './prompt.js'
 import { decodeDeckFromHash } from './share.js'
-import { getSession, onAuthChange, signOut } from './auth.js'
+import { onAuthChange, signOut } from './auth.js'
 
 export default function App() {
   const [session,   setSession]   = useState(null)
@@ -20,13 +20,15 @@ export default function App() {
     return null
   })
 
-  // Auth init
+  // Auth init — use onAuthStateChange as single source of truth.
+  // It fires INITIAL_SESSION immediately on subscribe, so we don't
+  // need a separate getSession() call. This also correctly handles
+  // the PKCE code exchange that happens after OAuth redirect.
   useEffect(() => {
-    getSession().then(s => {
+    const unsub = onAuthChange((s) => {
       setSession(s)
       setAuthReady(true)
     })
-    const unsub = onAuthChange(s => setSession(s))
     return unsub
   }, [])
 
@@ -52,7 +54,6 @@ export default function App() {
     }
   }, [])
 
-  // Called when a deck is loaded from library or JSON import
   const handleLoad = useCallback((loadedDeck, subject) => {
     setDeck({ ...loadedDeck, subject: subject || loadedDeck.subject || 'real_analysis' })
     setError(null)
