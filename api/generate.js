@@ -160,7 +160,14 @@ export default async function handler(req, res) {
   try {
     parsed = JSON.parse(clean)
   } catch {
-    return res.status(502).json({ error: `Model returned invalid JSON (${raw.length} chars). Preview: ${raw.slice(0, 300)}` })
+    // LaTeX backslashes (e.g. \epsilon, \mathbb) are not valid JSON escapes.
+    // Fix by doubling any backslash not already part of a valid JSON escape sequence.
+    try {
+      const fixed = clean.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+      parsed = JSON.parse(fixed)
+    } catch {
+      return res.status(502).json({ error: `Model returned invalid JSON (${raw.length} chars). Preview: ${raw.slice(0, 300)}` })
+    }
   }
 
   return res.status(200).json(parsed)
