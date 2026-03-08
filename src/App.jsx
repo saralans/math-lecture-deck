@@ -4,7 +4,7 @@ import SlideshowScreen from './SlideshowScreen.jsx'
 import AuthScreen from './AuthScreen.jsx'
 import { callAPI } from './prompt.js'
 import { decodeDeckFromHash } from './share.js'
-import { onAuthChange, signOut } from './auth.js'
+import { getSession, onAuthChange, signOut } from './auth.js'
 
 export default function App() {
   const [session,   setSession]   = useState(null)
@@ -20,11 +20,21 @@ export default function App() {
     return null
   })
 
-  // Auth init — use onAuthStateChange as single source of truth.
-  // It fires INITIAL_SESSION immediately on subscribe, so we don't
-  // need a separate getSession() call. This also correctly handles
-  // the PKCE code exchange that happens after OAuth redirect.
   useEffect(() => {
+    // If the URL hash contains OAuth tokens, Supabase will fire SIGNED_IN
+    // asynchronously after processing them. Don't call getSession() yet —
+    // it would return null and flash the login screen. Instead, stay in the
+    // loading state (authReady=false) until onAuthStateChange fires.
+    const hasOAuthHash = window.location.hash.includes('access_token=')
+
+    if (!hasOAuthHash) {
+      // Normal load: check stored session immediately
+      getSession().then(s => {
+        setSession(s)
+        setAuthReady(true)
+      })
+    }
+
     const unsub = onAuthChange((s) => {
       setSession(s)
       setAuthReady(true)
