@@ -1,0 +1,60 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: #0c1120;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* KaTeX dark theme adjustments */
+.katex {
+  color: #e8dfd0;
+  font-size: 1em;
+}
+
+.katex-display {
+  margin: 10px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.katex-display > .katex {
+  max-width: 100%;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3a5a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4a6a;
+}
+
+/* Input focus rings */
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: #d4a843 !important;
+  box-shadow: 0 0 0 2px #d4a84320;
+}
+
+button:focus-visible {
+  outline: 2px solid #d4a843;
+  outline-offset: 2px;
+}
