@@ -1,3 +1,20 @@
+const LIMITS = { free: 10, basic: 50, pro: Infinity }
+
+async function getSubscriptionTier(userId, authHeader, supabaseUrl, supabaseAnonKey) {
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/subscriptions?user_id=eq.${userId}&select=tier,status,current_period_end`,
+      { headers: { Authorization: authHeader, apikey: supabaseAnonKey } }
+    )
+    if (!res.ok) return 'free'
+    const data = await res.json()
+    const sub = data[0]
+    if (!sub || sub.status !== 'active') return 'free'
+    if (sub.current_period_end && new Date(sub.current_period_end) < new Date()) return 'free'
+    return sub.tier || 'free'
+  } catch { return 'free' }
+}
+
 // Inline subject data (can't import from src/ in serverless functions)
 const SUBJECTS = {
   real_analysis:          { label: 'Real Analysis',            systemPromptHint: 'Emphasize epsilon-delta rigor. Use Ross-style notation. Ground every definition in concrete sequence or metric space examples before abstraction. Cite section references like §10.8.' },
@@ -100,24 +117,84 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'concept is required' })
   }
 
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
-  const apiToken  = process.env.CLOUDFLARE_API_TOKEN
+  const redisUrl        = process.env.UPSTASH_REDIS_REST_URL
+  const redisToken      = process.env.UPSTASH_REDIS_REST_TOKEN
+  const supabaseUrl     = process.env.SUPABASE_URL
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY
 
-  if (!accountId || !apiToken) {
-    return res.status(500).json({ error: 'Server misconfiguration: missing Cloudflare credentials' })
+  // --- Identity ---
+  const authHeader = req.headers['authorization'] || ''
+  let userId = null
+  let isAuthenticated = false
+
+  if (authHeader.startsWith('Bearer ') && supabaseUrl && supabaseAnonKey) {
+    try {
+      const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        headers: { Authorization: authHeader, apikey: supabaseAnonKey },
+      })
+      if (userRes.ok) {
+        const userData = await userRes.json()
+        userId = userData.id
+        isAuthenticated = true
+      }
+    } catch { /* fall through to unauthenticated */ }
   }
 
-  const cfUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+  if (!userId) {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown'
+    userId = `anon:${ip}`
+  }
 
-  let cfRes
+  // --- Cache lookup (hits are free — no rate limit charge) ---
+  const cacheKey = `deck:${subject || 'real_analysis'}:${concept.trim().toLowerCase()}`
+  if (redisUrl && redisToken) {
+    try {
+      const getRes = await fetch(`${redisUrl}/get/${encodeURIComponent(cacheKey)}`, {
+        headers: { Authorization: `Bearer ${redisToken}` },
+      })
+      const getJson = await getRes.json()
+      if (getJson.result) return res.status(200).json(JSON.parse(getJson.result))
+    } catch { /* cache miss — proceed */ }
+  }
+
+  // --- Rate limit check ---
+  let tier = 'free'
+  if (isAuthenticated) tier = await getSubscriptionTier(userId, authHeader, supabaseUrl, supabaseAnonKey)
+  const limit = isAuthenticated ? (LIMITS[tier] ?? 10) : 3
+  const today = new Date().toISOString().slice(0, 10)
+  const rateLimitKey = `ratelimit:${userId}:${today}`
+  let used = 0
+
+  if (redisUrl && redisToken) {
+    try {
+      const countRes = await fetch(`${redisUrl}/get/${encodeURIComponent(rateLimitKey)}`, {
+        headers: { Authorization: `Bearer ${redisToken}` },
+      })
+      const countJson = await countRes.json()
+      used = parseInt(countJson.result || '0', 10)
+    } catch { /* proceed */ }
+
+    if (used >= limit) {
+      return res.status(429).json({ error: `Daily limit of ${limit} generations reached. Try again tomorrow.` })
+    }
+  }
+
+  const apiKey = process.env.GROQ_API_KEY
+
+  if (!apiKey) {
+    return res.status(500).json({ error: 'Server misconfiguration: missing Groq API key' })
+  }
+
+  let groqRes
   try {
-    cfRes = await fetch(cfUrl, {
+    groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiToken}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: buildSystemPrompt(subject || 'real_analysis') },
           { role: 'user',   content: buildPrompt(concept, context, subject || 'real_analysis') },
@@ -127,47 +204,94 @@ export default async function handler(req, res) {
       }),
     })
   } catch (err) {
-    return res.status(502).json({ error: `Failed to reach Cloudflare AI: ${err.message}` })
+    return res.status(502).json({ error: `Failed to reach Groq: ${err.message}` })
   }
 
-  if (cfRes.status === 429) {
-    return res.status(429).json({ error: 'Daily generation limit reached. Please try again tomorrow.' })
+  if (groqRes.status === 429) {
+    return res.status(429).json({ error: 'Rate limit reached. Please try again in a moment.' })
   }
 
-  if (!cfRes.ok) {
-    const body = await cfRes.text()
-    return res.status(502).json({ error: `Cloudflare AI error ${cfRes.status}: ${body.slice(0, 300)}` })
+  if (!groqRes.ok) {
+    const body = await groqRes.text()
+    return res.status(502).json({ error: `Groq error ${groqRes.status}: ${body.slice(0, 300)}` })
   }
 
-  let cfData
+  let groqData
   try {
-    cfData = await cfRes.json()
+    groqData = await groqRes.json()
   } catch {
-    return res.status(502).json({ error: 'Cloudflare AI returned non-JSON response' })
+    return res.status(502).json({ error: 'Groq returned non-JSON response' })
   }
 
-  if (!cfData.success) {
-    const errs = cfData.errors?.map(e => e.message).join(', ') || 'Unknown error'
-    return res.status(502).json({ error: `Cloudflare AI: ${errs}` })
-  }
-
-  const raw = cfData.result?.response || ''
+  const raw = groqData.choices?.[0]?.message?.content || ''
   let clean = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim()
   const jsonMatch = clean.match(/\{[\s\S]*\}/)
   if (jsonMatch) clean = jsonMatch[0]
 
+  // Always pre-process backslashes before parsing.
+  // LaTeX commands like \frac, \forall start with chars that are valid JSON escapes
+  // (\f = form-feed, \b = backspace) so JSON.parse would silently corrupt them.
+  // This regex doubles any lone backslash (not already escaped) that isn't a
+  // recognised JSON escape: \", \\, \/, or \uXXXX.
+  const fixed = clean.replace(/(?<!\\)\\(?!["\\\/]|u[0-9a-fA-F]{4})/g, '\\\\')
+
   let parsed
   try {
-    parsed = JSON.parse(clean)
+    parsed = JSON.parse(fixed)
   } catch {
-    // LaTeX backslashes (e.g. \epsilon, \mathbb) are not valid JSON escapes.
-    // Fix by doubling any backslash not already part of a valid JSON escape sequence.
+    // Last resort: try the raw string (handles models that already double-escape).
     try {
-      const fixed = clean.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
-      parsed = JSON.parse(fixed)
+      parsed = JSON.parse(clean)
     } catch {
       return res.status(502).json({ error: `Model returned invalid JSON (${raw.length} chars). Preview: ${raw.slice(0, 300)}` })
     }
+  }
+
+  // --- Increment rate limit counter (TTL = seconds until next midnight UTC) ---
+  if (redisUrl && redisToken) {
+    try {
+      await fetch(`${redisUrl}/incr/${encodeURIComponent(rateLimitKey)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${redisToken}` },
+      })
+      const now = new Date()
+      const midnight = new Date(now)
+      midnight.setUTCHours(24, 0, 0, 0)
+      const ttl = Math.ceil((midnight - now) / 1000)
+      await fetch(`${redisUrl}/expire/${encodeURIComponent(rateLimitKey)}/${ttl}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${redisToken}` },
+      })
+    } catch { /* non-fatal */ }
+  }
+
+  // --- Log usage to Supabase (fire-and-forget, authenticated users only) ---
+  if (isAuthenticated && supabaseUrl && supabaseAnonKey) {
+    fetch(`${supabaseUrl}/rest/v1/usage_logs`, {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader,
+        apikey: supabaseAnonKey,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ user_id: userId, subject: subject || 'real_analysis', concept: concept.trim(), cached: false }),
+    }).catch(() => {})
+  }
+
+  // Store in cache only if the deck is valid (has slides) — prevents caching broken responses
+  if (!Array.isArray(parsed.slides) || parsed.slides.length === 0) {
+    return res.status(502).json({ error: 'Model returned an empty deck. Please try again.' })
+  }
+
+  if (redisUrl && redisToken) {
+    try {
+      await fetch(`${redisUrl}/set/${encodeURIComponent(cacheKey)}?ex=${60 * 60 * 24 * 7}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${redisToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(JSON.stringify(parsed)),
+      })
+    } catch { /* non-fatal */ }
   }
 
   return res.status(200).json(parsed)

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import JSZip from 'jszip'
 import { C, FONT, S, btn } from './styles.js'
-import { TYPE_META, RENDERERS } from './slideRenderers.jsx'
+import { TYPE_META, RENDERERS, MathText } from './slideRenderers.jsx'
 import { saveToLibrary } from './library.js'
 import { encodeDeckToHash } from './share.js'
 
@@ -537,7 +537,7 @@ export default function SlideshowScreen({ deck, onReset, onDeckChange }) {
                 />
               ) : (
                 slide?.speaker_script
-                  ? <p style={{ fontSize: '14.5px', color: C.textDim, lineHeight: 1.78, margin: 0, fontFamily: FONT.serif }}>{slide.speaker_script}</p>
+                  ? <p style={{ fontSize: '14.5px', color: C.textDim, lineHeight: 1.78, margin: 0, fontFamily: FONT.serif }}><MathText text={slide.speaker_script} /></p>
                   : <p style={{ fontSize: '13px', color: C.border, fontStyle: 'italic', margin: 0 }}>No script for this slide.</p>
               )}
             </div>

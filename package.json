@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "local": "GROQ_API_KEY=$(grep GROQ_API_KEY .env.local | cut -d'\"' -f2) vercel dev",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
+    "playwright": "^1.58.2",
     "vite": "^5.4.11"
   }
 }

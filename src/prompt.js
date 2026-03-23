@@ -69,11 +69,24 @@ export function buildPrompt(concept, context, subject) {
   return p
 }
 
-export async function callAPI(concept, context, subject, onStatus) {
+export async function getQuota(token) {
+  try {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const res = await fetch('/api/usage', { headers })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
+export async function callAPI(concept, context, subject, onStatus, token) {
   onStatus('Generating lecture deck...')
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch('/api/generate', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ concept, context, subject }),
   })
 

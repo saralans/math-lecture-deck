@@ -8,6 +8,7 @@ export default function AuthScreen() {
       <div style={{ width: '100%', maxWidth: '420px' }}>
 
         <div style={{ textAlign: 'center', marginBottom: '44px' }}>
+          <img src="/logo.png" alt="Logo" style={{ width: '125px', height: '125px', objectFit: 'contain', marginBottom: '8px', display: 'block', margin: '0 auto 8px' }} />
           <div style={{ display: 'inline-block', border: `1px solid ${C.gold}40`, borderRadius: '100px', padding: '4px 14px', fontSize: '11px', color: C.gold, letterSpacing: '0.18em', textTransform: 'uppercase', fontFamily: FONT.sans, marginBottom: '20px' }}>
             Math Lecture Decks
           </div>
