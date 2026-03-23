@@ -1,3 +1,6 @@
 {
-  "rewrites": [{ "source": "/((?!api/)(?!@)(?!src/)(?!node_modules/)[^.]*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/((?!api/)(?!@)(?!src/)(?!node_modules/)[^.]*)", "destination": "/index.html" }],
+  "crons": [
+    { "path": "/api/daily-digest", "schedule": "0 1 * * *" }
+  ]
 }
