@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     })
   }
 
-  const origin = req.headers.origin || 'https://math-lecture-deck.vercel.app'
+  const origin = req.headers.origin || 'https://mathnest.ai'
   const session = await stripePost('/checkout/sessions', {
     customer: stripeCustomerId,
     mode: 'subscription',
