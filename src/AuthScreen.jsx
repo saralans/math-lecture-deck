@@ -46,7 +46,7 @@ export default function AuthScreen() {
         </div>
 
         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: C.muted, fontFamily: FONT.sans, lineHeight: 1.6 }}>
-          By signing in you agree to use this tool for educational purposes.
+          By signing in you agree to use this tool for educational purposes. View our <a href="/privacy.html" style={{ color: C.gold }}>Privacy Policy</a>.
         </p>
       </div>
     </div>
